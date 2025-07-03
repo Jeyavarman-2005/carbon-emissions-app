@@ -1,0 +1,238 @@
+// Google Apps Script backend for your application
+const sheet = SpreadsheetApp.getActiveSpreadsheet();
+
+function doPost(e) {
+  // Create the response object first
+  const response = ContentService.createTextOutput();
+  response.setMimeType(ContentService.MimeType.JSON);
+
+  try {
+    // 1. Handle preflight requests and missing data
+    if (!e || !e.postData || !e.postData.contents) {
+      throw new Error("No valid POST data received");
+    }
+
+    // 2. Parse and validate the incoming request
+    const requestData = JSON.parse(e.postData.contents);
+    console.log("Received request data:", JSON.stringify(requestData));
+
+    if (!requestData.endpoint) {
+      throw new Error("Endpoint not specified in request");
+    }
+
+    // 3. Process different endpoints
+    let result;
+    switch (requestData.endpoint) {
+      case 'saveData':
+        if (!requestData.data) {
+          throw new Error("No data provided for saveData endpoint");
+        }
+        result = saveData(requestData.data);
+        break;
+
+      case 'getBusinesses':
+        result = getBusinesses();
+        break;
+
+      case 'getPlantData':
+        if (!requestData.data || !requestData.data.businessId) {
+          throw new Error("businessId required for getPlantData");
+        }
+        result = getPlantData(
+          requestData.data.businessId, 
+          requestData.data.plantId || null
+        );
+        break;
+
+      case 'saveFile':
+        if (!requestData.data || !requestData.data.base64Data || !requestData.data.fileName) {
+          throw new Error("base64Data and fileName required for saveFile");
+        }
+        result = saveFileToDrive(
+          requestData.data.base64Data,
+          requestData.data.fileName,
+          requestData.data.businessName || "Unknown",
+          requestData.data.plantName || "Unknown"
+        );
+        break;
+
+      default:
+        throw new Error(`Unknown endpoint: ${requestData.endpoint}`);
+    }
+
+    // 4. Prepare success response
+    response.setContent(JSON.stringify({
+      success: true,
+      data: result,
+      timestamp: new Date().toISOString()
+    }));
+
+  } catch (error) {
+    // 5. Handle errors gracefully
+    console.error("Error in doPost:", error.message, error.stack);
+    
+    response.setContent(JSON.stringify({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    }));
+  }
+
+  // 6. Return the prepared response
+  return response;
+}
+
+function saveData(data) {
+  const {
+    businessName, plantName,
+    scope1_2026, scope2_2026,
+    scope1_2027, scope2_2027,
+    scope1_2028, scope2_2028,
+    scope1_2029, scope2_2029,
+    scope1_2030, scope2_2030
+  } = data;
+
+  // Save business if not exists
+  const businessSheet = sheet.getSheetByName('businesses');
+  let businessId = getBusinessId(businessName);
+
+  if (!businessId) {
+    businessId = Utilities.getUuid();
+    businessSheet.appendRow([businessId, businessName]);
+  }
+
+  // Save plant if not exists
+  const plantSheet = sheet.getSheetByName('plants');
+  let plantId = getPlantId(businessId, plantName);
+
+  if (!plantId) {
+    plantId = Utilities.getUuid();
+    plantSheet.appendRow([plantId, businessId, plantName]);
+  }
+
+  // Save emissions data
+  const emissionsSheet = sheet.getSheetByName('emissions');
+  emissionsSheet.appendRow([
+    plantId,
+    scope1_2026, scope2_2026,
+    scope1_2027, scope2_2027,
+    scope1_2028, scope2_2028,
+    scope1_2029, scope2_2029,
+    scope1_2030, scope2_2030,
+    new Date() // timestamp
+  ]);
+
+  // Save project constraints and upload file to Drive
+  if (data.investment || data.carbonEmission) {
+    const projectsSheet = sheet.getSheetByName('projects');
+
+    const fileUrl = (() => {
+      if (data.fileData && data.fileName) {
+        const fileResult = saveFileToDrive(data.fileData, data.fileName, businessName, plantName);
+        return fileResult?.url || '';
+      }
+      return '';
+    })();
+
+    projectsSheet.appendRow([
+      plantId,
+      data.investment,
+      data.carbonEmission,
+      data.targetDate,
+      fileUrl,
+      new Date()
+    ]);
+  }
+
+  return { success: true, businessId, plantId };
+}
+
+function getBusinesses() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('businesses');
+  const data = sheet.getDataRange().getValues();
+
+  return data.slice(1).map(row => ({
+    id: row[0],
+    name: row[1]
+  }));
+}
+
+function getPlantData(businessId, plantId = null) {
+  const plantsSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('plants');
+  const plantsData = plantsSheet.getDataRange().getValues();
+
+  if (!plantId) {
+    return {
+      plants: plantsData.slice(1)
+        .filter(row => row[1] === businessId)
+        .map(row => ({ id: row[0], name: row[2] }))
+    };
+  }
+
+  const emissionsSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('emissions');
+  const emissionsData = emissionsSheet.getDataRange().getValues();
+
+  const plantData = plantsData.find(row => row[0] === plantId);
+  if (!plantData) throw new Error('Plant not found');
+
+  const emissions = emissionsData.find(row => row[0] === plantId);
+  if (!emissions) throw new Error('No emissions data found');
+
+  return {
+    emissionsData: {
+      scope1_2026: emissions[1],
+      scope2_2026: emissions[2],
+      scope1_2027: emissions[3],
+      scope2_2027: emissions[4],
+      scope1_2028: emissions[5],
+      scope2_2028: emissions[6],
+      scope1_2029: emissions[7],
+      scope2_2029: emissions[8],
+      scope1_2030: emissions[9],
+      scope2_2030: emissions[10],
+    }
+  };
+}
+
+// ------------------------
+// Helper functions
+// ------------------------
+
+function getBusinessId(name) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('businesses');
+  const data = sheet.getDataRange().getValues();
+  const business = data.find(row => row[1] === name);
+  return business ? business[0] : null;
+}
+
+function getPlantId(businessId, name) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('plants');
+  const data = sheet.getDataRange().getValues();
+  const plant = data.find(row => row[1] === businessId && row[2] === name);
+  return plant ? plant[0] : null;
+}
+
+// ------------------------
+// Drive Upload Function
+// ------------------------
+
+function saveFileToDrive(base64Data, fileName, businessName, plantName) {
+  try {
+    const folder = DriveApp.getFolderById('1r8_i5iOA8cnv5ktMF4FIKa4_57VvfAuF'); // 🔁 Replace with your actual folder ID
+    const businessFolder = getOrCreateSubfolder(folder, businessName);
+    const plantFolder = getOrCreateSubfolder(businessFolder, plantName);
+
+    const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), 'application/vnd.ms-excel', fileName);
+    const file = plantFolder.createFile(blob);
+
+    return { url: file.getUrl(), id: file.getId() };
+  } catch (e) {
+    console.error('Error saving file:', e);
+    return null;
+  }
+}
+
+function getOrCreateSubfolder(parent, name) {
+  const folders = parent.getFoldersByName(name);
+  return folders.hasNext() ? folders.next() : parent.createFolder(name);
+}

@@ -1,38 +1,131 @@
-.App {
+/* Base Styles */
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #333;
+  line-height: 1.6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  color: #1B5E20;
+  margin-top: 0;
+}
+
+a {
+  color: #2E7D32;
+  text-decoration: none;
+  transition: color 0.3s;
+}
+
+a:hover {
+  color: #1B5E20;
+  text-decoration: underline;
+}
+
+/* Form Elements */
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  transition: border-color 0.3s;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #4CAF50;
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+}
+
+button {
+  background-color: #2E7D32;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+button:hover {
+  background-color: #1B5E20;
+}
+
+button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+/* Utility Classes */
+.textCenter {
   text-align: center;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+.mt1 { margin-top: 1rem; }
+.mt2 { margin-top: 2rem; }
+.mb1 { margin-bottom: 1rem; }
+.mb2 { margin-bottom: 2rem; }
+
+/* React Datepicker Overrides */
+.react-datepicker {
+  font-family: inherit;
+  border: 1px solid #ddd;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
+.react-datepicker__header {
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #ddd;
+}
+
+.react-datepicker__current-month,
+.react-datepicker__day-name {
+  color: #2E7D32;
+  font-weight: 500;
+}
+
+.react-datepicker__day--selected {
+  background-color: #2E7D32;
+}
+
+.react-datepicker__day--selected:hover {
+  background-color: #1B5E20;
+}
+
+/* Recharts Overrides */
+.recharts-tooltip {
+  background-color: white !important;
+  border: 1px solid #ddd !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+  border-radius: 4px !important;
+  padding: 0.5rem !important;
+}
+
+.recharts-tooltip-label {
+  color: #2E7D32 !important;
+  font-weight: 500 !important;
+}
+
+.recharts-legend-item-text {
+  color: #333 !important;
+}
+
+/* Responsive Layout */
+@media (max-width: 768px) {
+  .dataSection, .inputGroup, .selectorSection {
+    flex-direction: column;
   }
-}
-
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
-}
-
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
+  
+  .constraints {
+    width: 100%;
   }
 }

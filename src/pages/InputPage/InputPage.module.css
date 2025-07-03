@@ -1,0 +1,428 @@
+/* Global Styles */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;500;600&family=Roboto:wght@300;400;500&display=swap');
+
+:root {
+  --primary-color: #0a2e38;
+  --secondary-color: #1b5e20;
+  --accent-color: #4caf50;
+  --light-accent: #8bc34a;
+  --text-dark: #263238;
+  --text-medium: #455a64;
+  --text-light: #cfd8dc;
+  --background-light: #f5f7fa;
+  --white: #ffffff;
+  --error-color: #e53935;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+  --shadow-lg: 0 10px 25px rgba(0,0,0,0.1);
+  --transition: all 0.3s ease;
+}
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--background-light);
+  font-family: 'Open Sans', sans-serif;
+  color: var(--text-dark);
+}
+
+.mainContent {
+  flex: 1;
+  padding: 2rem 3rem;
+  max-width: 1800px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* Card Styles */
+.inputCard, .emissionsCard, .constraintsCard, .uploadCard, .templateCard {
+  background: var(--white);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  padding: 1.5rem;
+  transition: var(--transition);
+}
+
+.inputCard:hover, .emissionsCard:hover, .constraintsCard:hover, 
+.uploadCard:hover, .templateCard:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.cardHeader h3 {
+  margin: 0;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.cardIcon {
+  margin-right: 0.75rem;
+  color: var(--accent-color);
+  font-size: 1.2rem;
+}
+
+/* Business Section */
+.businessSection {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+}
+
+.inputLabel {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  font-weight: 500;
+  color: var(--text-medium);
+  font-size: 0.95rem;
+}
+
+.labelIcon {
+  margin-right: 0.5rem;
+  font-size: 1.1rem;
+}
+
+.inputField {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: 'Open Sans', sans-serif;
+  transition: var(--transition);
+  background-color: #fafafa;
+}
+
+.inputField:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+  background-color: var(--white);
+}
+
+/* Data Section */
+.dataSection {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+}
+
+.emissionsCard {
+  grid-column: 1;
+}
+
+.constraintsCard {
+  grid-column: 2;
+}
+
+.tableContainer {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.emissionsTable {
+  width: 100%;
+  min-width: 800px; /* Increased from default */
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.95rem;
+}
+
+.emissionsTable th {
+  background-color: var(--primary-color);
+  color: var(--white);
+  font-weight: 500;
+  padding: 0.8rem 1rem;
+  text-align: center;
+  position: sticky;
+  top: 0;
+}
+
+.emissionsTable td {
+  padding: 0.8rem 1rem;
+  text-align: center;
+  border-bottom: 1px solid #f0f0f0;
+  background-color: var(--white);
+}
+
+.emissionsTable tr:nth-child(even) td {
+  background-color: #f9f9f9;
+}
+
+.emissionsTable tr:hover td {
+  background-color: #f0f0f0;
+}
+
+.tableInput {
+  width: 90%;
+  padding: 0.5rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  text-align: center;
+  font-family: 'Roboto', sans-serif;
+  transition: var(--transition);
+}
+
+.tableInput:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.1);
+}
+
+/* Constraints */
+.constraintItem {
+  margin-bottom: 1.5rem;
+}
+
+.datePickerWrapper {
+  width: 100%;
+}
+
+.datePicker {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: 'Open Sans', sans-serif;
+  background-color: #fafafa;
+}
+
+/* File Section */
+.fileSection {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.uploadBox {
+  border: 2px dashed var(--light-accent);
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  background-color: rgba(139, 195, 74, 0.05);
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+.uploadBox:hover {
+  background-color: rgba(139, 195, 74, 0.1);
+  border-color: var(--accent-color);
+}
+
+.uploadLabel {
+  display: block;
+  cursor: pointer;
+}
+
+.fileInput {
+  display: none;
+}
+
+.uploadContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.uploadIcon {
+  font-size: 2rem;
+  color: var(--accent-color);
+  margin-bottom: 1rem;
+}
+
+.uploadText {
+  margin: 0;
+  font-weight: 500;
+  color: var(--text-medium);
+}
+
+.uploadSubtext {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-light);
+}
+
+.filePreview {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background-color: rgba(76, 175, 80, 0.1);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  color: var(--secondary-color);
+}
+
+/* Template Card */
+.templateContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.templateImage {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.templateNote {
+  margin:0rem;
+  padding: 0.5rem;
+  text-align: center;
+  font-size: 1rem;
+}
+
+.downloadLink {
+  display: flex;
+  align-items: center;
+  padding: 0.8rem 1.5rem;
+  background-color: var(--secondary-color);
+  color: var(--white);
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: var(--transition);
+}
+
+.downloadLink:hover {
+  background-color: var(--primary-color);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.downloadIcon {
+  margin-right: 0.5rem;
+}
+
+/* Action Bar */
+.actionBar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.submitButton {
+  display: flex;
+  align-items: center;
+  padding: 1rem 2rem;
+  background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%);
+  color: var(--white);
+  border: none;
+  border-radius: 8px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+
+.submitButton:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+}
+
+.buttonArrow {
+  margin-left: 0.5rem;
+  transition: var(--transition);
+}
+
+.submitButton:hover .buttonArrow {
+  transform: translateX(3px);
+}
+
+/* Error Handling */
+.errorInput {
+  border-color: var(--error-color) !important;
+}
+
+.errorMessage {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--error-color);
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .mainContent {
+    padding: 1.5rem 2rem;
+  }
+  
+  .dataSection {
+    grid-template-columns: 1fr;
+  }
+  
+  .constraintsCard {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 992px) {
+  .fileSection {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .templateCard {
+    order: 1;
+  }
+  
+  .uploadCard {
+    order: 2;
+  }
+}
+
+@media (max-width: 768px) {
+  .mainContent {
+    padding: 1rem;
+  }
+  
+  .businessSection {
+    grid-template-columns: 1fr;
+  }
+  
+  .cardHeader h3 {
+    font-size: 1.1rem;
+  }
+  
+  .submitButton {
+    padding: 0.8rem 1.5rem;
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: 0 1rem;
+  }
+  
+  .inputField, .datePicker, .tableInput {
+    padding: 0.7rem;
+  }
+  
+  .uploadBox {
+    padding: 1.5rem;
+  }
+}
