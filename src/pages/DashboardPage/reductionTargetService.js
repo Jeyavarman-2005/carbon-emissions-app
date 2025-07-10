@@ -45,9 +45,9 @@ export const calculateReductionTargetLine = (emissionsData, projectParams, filte
   const yearDiff = targetYear - 2025;
   
   for (let i = 0; i <= yearDiff; i++) {
-    const currentYear = 2025 + i;
+    const currentYear = 2025+i;
     // Linear interpolation between start and end values
-    const currentValue = baseValue + (targetValue - baseValue) * (i / yearDiff);
+    const currentValue = (baseValue + (targetValue - baseValue) * (i / yearDiff))+1;
     
     linePoints.push({
       year: currentYear.toString(),
@@ -60,13 +60,19 @@ export const calculateReductionTargetLine = (emissionsData, projectParams, filte
   return linePoints;
 };
 
-export const prepareChartDataWithTarget = (emissionsData, projectParams, isSubmitted, filteredProjects) => {
+export const prepareChartDataWithTarget = (
+  barData,       // Data for bar values (initial)
+  lineData,      // Data for line calculations (current)
+  projectParams, 
+  isSubmitted, 
+  filteredProjects
+) => {
   const baseChartData = [];
   
-  // Prepare the regular bar chart data
+  // Prepare bar chart data using initial values
   for (let year = 2025; year <= 2030; year++) {
-    const scope1 = emissionsData[`scope1_${year}`] || 0;
-    const scope2 = emissionsData[`scope2_${year}`] || 0;
+    const scope1 = barData[`scope1_${year}`] || 0;
+    const scope2 = barData[`scope2_${year}`] || 0;
     const total = scope1 + scope2;
     
     baseChartData.push({
@@ -77,19 +83,13 @@ export const prepareChartDataWithTarget = (emissionsData, projectParams, isSubmi
     });
   }
 
-  // Only calculate target line if form is submitted
+  // Calculate target line using current data
   const reductionLine = isSubmitted 
-    ? calculateReductionTargetLine(emissionsData, projectParams, filteredProjects) 
+    ? calculateReductionTargetLine(lineData, projectParams, filteredProjects) 
     : null;
 
-  // Merge the data
-  return baseChartData.map(item => {
-    // Find if this year has a target point
-    const targetPoint = reductionLine?.find(point => point.year === item.year);
-    
-    return {
-      ...item,
-      targetValue: targetPoint ? targetPoint.value : null
-    };
-  });
+  return baseChartData.map(item => ({
+    ...item,
+    targetValue: reductionLine?.find(point => point.year === item.year)?.value || null
+  }));
 };

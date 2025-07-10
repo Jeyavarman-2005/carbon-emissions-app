@@ -1,36 +1,32 @@
 import { downloadExcelFile } from '../../services/api_op';
-import supabase from '../../backend/config/supabase';
 import * as XLSX from 'xlsx';
 
-
 export const handleExcelDownload = async (
-  response, // This now contains both businessName and plantName
+  response,
   setAllProjects,
   setFilteredProjects,
   setTopProjects,
-  setError
+  setError,
+  businessName,
+  plantName
 ) => {
-  console.group('=== Excel Download ===');
+  console.log('[ExcelDownload] Starting download...');
+  console.log('[ExcelDownload] Incoming response:', response);
+
   try {
-    if (!response?.businessName || !response?.plantName) {
-      throw new Error('Business or plant name not available');
+    if (!response?.fileInfo?.storage_path) {
+      console.warn('[ExcelDownload] No storage path found in response.');
+      setError('No project file available for this plant');
+      return false;
     }
 
-    const fileName = `${response.businessName}_${response.plantName}.xlsx`;
-    console.log('Downloading Excel file:', fileName);
-    
-    const { data: file, error } = await supabase
-      .storage
-      .from('project-files')
-      .download(`uploads/${fileName}`);
-
-    if (error) throw error;
-
+    console.log('[ExcelDownload] Downloading file from:', response.fileInfo.storage_path);
+    const file = await downloadExcelFile(response.fileInfo.storage_path);
     const arrayBuffer = await file.arrayBuffer();
     const workbook = XLSX.read(arrayBuffer);
     const projects = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
     
-    console.log(`Loaded ${projects.length} projects from ${fileName}`);
+    console.log(`[ExcelDownload] Loaded ${projects.length} projects`);
     
     setAllProjects(projects);
     setFilteredProjects(projects);
@@ -41,20 +37,18 @@ export const handleExcelDownload = async (
       .slice(0, 5)
       .map((p, i) => ({
         id: i + 1,
-        name: p.Project,
-        reduction: (p['Estimated Carbon Reduction in Kg/CO2 per annum'] / 1000).toFixed(2),
+        name: (p['Project Information in details']),
+        reduction: (p['Estimated Carbon Reduction in Kg/CO2 per annum']).toFixed(2),
         investment: p['Estimated Investment in Rs.'].toLocaleString(),
-        TimeTaken: p['Estimated Timeline']
+        TimeTaken: p['Estimated Timeline in months']
       }));
     
     setTopProjects(initialTop5);
     
     return true;
   } catch (err) {
-    console.error('Excel download error:', err);
-    setError(`Failed to load project data. File:`);
+    console.error('[ExcelDownload] Error:', err);
+    setError(`Failed to load project data: ${err.message}`);
     return false;
-  } finally {
-    console.groupEnd();
   }
 };
