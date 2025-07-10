@@ -2,177 +2,125 @@ export function optimizeProjects(projects, constraints) {
   // Convert constraints
   const maxInvestment = Number(constraints.investment) || Infinity;
   const minCarbonKg = (Number(constraints.carbonEmission) || 0);
-  const maxTotalTimeline = constraints.targetDate ? 
+  const maxProjectTimeline = constraints.targetDate ? 
     calculateTimeline(constraints.targetDate) : 
     Infinity;
 
-  // Determine optimization mode based on provided constraints
-  const optimizationMode = 
-    !isFinite(maxInvestment) ? 'TIMELINE_CARBON_ONLY' :
-    minCarbonKg <= 0 ? 'INVESTMENT_TIMELINE_ONLY' :
-    'FULL_CONSTRAINTS';
+  // Filter out projects that exceed timeline upfront
+  const feasibleProjects = projects.filter(project => 
+    (project['Estimated Timeline in months'] || 0) <= maxProjectTimeline
+  );
 
-  console.log('Optimization mode:', optimizationMode, {
-    maxInvestment,
-    minCarbonKg,
-    maxTotalTimeline
-  });
+  // Handle case when maxInvestment is Infinity
+  if (!isFinite(maxInvestment)) {
+    // Use greedy approach when no investment constraint
+    const selectedProjects = [];
+    let totalCarbon = 0;
+    let totalInvestment = 0;
+    let maxTime = 0;
 
-  // Initialize best solution
-  let bestSolution = {
-    selectedIndices: [],
-    totalInvestment: 0,
-    totalCarbonReduction: 0,
-    maxProjectTimeline: 0,
-    totalTimeline: 0,
-    isValid: false
-  };
-
-  // Recursive backtracking function
-  function backtrack(index, currentSelection, currentInvestment, currentCarbon, currentMaxTime, currentTotalTime) {
-    // Base case - all projects considered
-    if (index === projects.length) {
-      let meetsConstraints = false;
-      
-      switch (optimizationMode) {
-        case 'TIMELINE_CARBON_ONLY': // Only timeline and carbon constraints
-          meetsConstraints = currentCarbon >= minCarbonKg && currentTotalTime <= maxTotalTimeline;
-          break;
-          
-        case 'INVESTMENT_TIMELINE_ONLY': // Only investment and timeline constraints
-          meetsConstraints = currentInvestment <= maxInvestment && currentTotalTime <= maxTotalTimeline;
-          // Find solution with maximum carbon reduction within investment
-          if (meetsConstraints && (
-            !bestSolution.isValid || 
-            currentCarbon > bestSolution.totalCarbonReduction ||
-            (currentCarbon === bestSolution.totalCarbonReduction && currentInvestment < bestSolution.totalInvestment)
-          )) {
-            bestSolution = {
-              selectedIndices: [...currentSelection],
-              totalInvestment: currentInvestment,
-              totalCarbonReduction: currentCarbon,
-              maxProjectTimeline: currentMaxTime,
-              totalTimeline: currentTotalTime,
-              isValid: true
-            };
-          }
-          return;
-          
-        case 'FULL_CONSTRAINTS': // All constraints
-          meetsConstraints = currentCarbon >= minCarbonKg && 
-                           currentInvestment <= maxInvestment && 
-                           currentTotalTime <= maxTotalTimeline;
-          break;
-      }
-
-      if (meetsConstraints && (
-        !bestSolution.isValid || 
-        currentInvestment < bestSolution.totalInvestment ||
-        (currentInvestment === bestSolution.totalInvestment && currentCarbon > bestSolution.totalCarbonReduction)
-      )) {
-        bestSolution = {
-          selectedIndices: [...currentSelection],
-          totalInvestment: currentInvestment,
-          totalCarbonReduction: currentCarbon,
-          maxProjectTimeline: currentMaxTime,
-          totalTimeline: currentTotalTime,
-          isValid: true
-        };
-      }
-      return;
-    }
-
-    // Prune branches that can't be better than current best
-    if (optimizationMode !== 'INVESTMENT_TIMELINE_ONLY' && 
-        currentInvestment >= bestSolution.totalInvestment && 
-        bestSolution.isValid) {
-      return;
-    }
-
-    // Option 1: Skip this project
-    backtrack(
-      index + 1,
-      currentSelection,
-      currentInvestment,
-      currentCarbon,
-      currentMaxTime,
-      currentTotalTime
+    // Sort by carbon reduction (descending)
+    feasibleProjects.sort((a, b) => 
+      (b['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0) - 
+      (a['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0)
     );
 
-    // Option 2: Select this project (if within constraints)
-    const project = projects[index];
-    const newInvestment = currentInvestment + (project['Estimated Investment in Rs.'] || 0);
-    const newCarbon = currentCarbon + (project['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0);
-    const newMaxTime = Math.max(currentMaxTime, project['Estimated Timeline'] || 0);
-    const newTotalTime = currentTotalTime + (project['Estimated Timeline'] || 0);
-    
-    // Check relevant constraints based on mode
-    const withinInvestment = newInvestment <= maxInvestment;
-    const withinTimeline = newTotalTime <= maxTotalTimeline;
-    
-    if ((optimizationMode === 'INVESTMENT_TIMELINE_ONLY' && withinInvestment && withinTimeline) ||
-        (optimizationMode !== 'INVESTMENT_TIMELINE_ONLY' && withinInvestment && withinTimeline)) {
-      currentSelection.push(index);
-      backtrack(
-        index + 1,
-        currentSelection,
-        newInvestment,
-        newCarbon,
-        newMaxTime,
-        newTotalTime
-      );
-      currentSelection.pop();
+    // Select projects until carbon target is met
+    for (const project of feasibleProjects) {
+      if (totalCarbon >= minCarbonKg) break;
+      
+      selectedProjects.push(project);
+      totalCarbon += project['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0;
+      totalInvestment += project['Estimated Investment in Rs.'] || 0;
+      maxTime = Math.max(maxTime, project['Estimated Timeline in months'] || 0);
+    }
+
+    if (totalCarbon >= minCarbonKg) {
+      return {
+        status: 'optimal',
+        selectedProjects,
+        totalInvestment,
+        totalCarbonReduction: totalCarbon,
+        maxProjectTimeline: maxTime
+      };
+    } else {
+      return { status: 'infeasible' };
     }
   }
 
-  // Start the optimization
-  backtrack(0, [], 0, 0, 0, 0);
+  // For finite investment, use DP approach
+  const dpSize = Math.min(maxInvestment, 1e8); // Safety limit for large investments
+  const dp = Array(feasibleProjects.length + 1)
+    .fill()
+    .map(() => Array(dpSize + 1).fill({
+      carbon: 0,
+      selected: []
+    }));
+
+  // Dynamic programming approach
+  for (let i = 1; i <= feasibleProjects.length; i++) {
+    const project = feasibleProjects[i - 1];
+    const investment = project['Estimated Investment in Rs.'] || 0;
+    const carbon = project['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0;
+
+    for (let j = 0; j <= dpSize; j++) {
+      if (investment > j) {
+        dp[i][j] = dp[i - 1][j];
+      } else {
+        const include = {
+          carbon: dp[i - 1][j - investment].carbon + carbon,
+          selected: [...dp[i - 1][j - investment].selected, i - 1]
+        };
+        
+        dp[i][j] = include.carbon > dp[i - 1][j].carbon ? include : dp[i - 1][j];
+      }
+    }
+  }
+
+  // Find best solution
+  let bestSolution = null;
+  for (let j = 0; j <= dpSize; j++) {
+    const solution = dp[feasibleProjects.length][j];
+    if (solution.carbon >= minCarbonKg) {
+      if (!bestSolution || solution.carbon > bestSolution.carbon) {
+        bestSolution = solution;
+      }
+    }
+  }
 
   // Prepare results
-  if (!bestSolution.isValid) {
+  if (!bestSolution) {
     return { status: 'infeasible' };
   }
 
-  const selectedProjects = bestSolution.selectedIndices.map(i => projects[i]);
+  const selectedProjects = bestSolution.selected.map(i => feasibleProjects[i]);
+  const maxSingleProjectTimeline = Math.max(
+    ...selectedProjects.map(p => p['Estimated Timeline in months'] || 0), 
+    0
+  );
 
   return {
     status: 'optimal',
     selectedProjects,
-    totalInvestment: bestSolution.totalInvestment,
-    totalCarbonReduction: bestSolution.totalCarbonReduction,
-    maxProjectTimeline: bestSolution.maxProjectTimeline,
-    totalTimeline: bestSolution.totalTimeline
+    totalInvestment: bestSolution.selected.reduce(
+      (sum, i) => sum + (feasibleProjects[i]['Estimated Investment in Rs.'] || 0), 
+      0
+    ),
+    totalCarbonReduction: bestSolution.carbon,
+    maxProjectTimeline: maxSingleProjectTimeline
   };
 }
-
 
 function calculateTimeline(targetDate) {
   try {
     const today = new Date();
     const target = new Date(targetDate);
+    if (isNaN(target.getTime())) return Infinity;
     
-    if (isNaN(target.getTime())) {
-      console.warn('Invalid target date:', targetDate);
-      return Infinity;
-    }
-    
-    const yearsDiff = target.getFullYear() - today.getFullYear();
-    const monthsDiff = target.getMonth() - today.getMonth();
-    const daysDiff = target.getDate() - today.getDate();
-    
-    // Calculate total years with fractions
-    const totalYears = yearsDiff + (monthsDiff / 12) + (daysDiff / 365);
-    
-    console.log('Timeline calculation:', {
-      today,
-      target,
-      yearsDiff,
-      monthsDiff,
-      daysDiff,
-      totalYears
-    });
-    
-    return Math.max(0, totalYears);
+    // Calculate difference in months
+    const months = (target.getFullYear() - today.getFullYear()) * 12 + 
+                   (target.getMonth() - today.getMonth());
+    return Math.max(0, months);
   } catch (error) {
     console.error('Error calculating timeline:', error);
     return Infinity;

@@ -70,18 +70,17 @@ export const filterProjects = async (projects, params) => {
 // Helper functions with logging
 function formatProject(project, index) {
   const formatted = {
-    id: index ,
-    name: project.Project,
-    reduction: (project['Estimated Carbon Reduction in Kg/CO2 per annum']),
-    investment: project['Estimated Investment in Rs.'].toLocaleString(),
-    TimeTaken: project['Estimated Timeline'],
-    category: project.Category,
-    approach: project.Approach
+    id: index,
+    name: project['Project Information in details'] || project.Project || '--',
+    reduction: (project['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0),
+    investment: project['Estimated Investment in Rs.']?.toLocaleString() || '--',
+    TimeTaken: project['Estimated Timeline in months'] || project['Estimated Timeline'] || '--',
+    category: project.Category || '--',
+    approach: project.Approach || '--'
   };
   console.log(`Formatting project ${index}:`, project, '->', formatted);
   return formatted;
 }
-
 function createPlaceholderProject(id) {
   return {
     id,

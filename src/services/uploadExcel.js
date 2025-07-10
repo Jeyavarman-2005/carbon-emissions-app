@@ -1,43 +1,63 @@
-// services/uploadExcel.js
 import supabase from '../backend/config/supabase';
 
-export async function uploadExcelFile(file, onProgress) {
-  // ✅ Just use the original file name — no timestamp
-  const filePath = `uploads/${file.name}`;
-
+export async function uploadExcelFile(file, plantId, onProgress) {
   try {
-    const { data, error } = await supabase
+    console.log('[Upload] Starting upload for plantId:', plantId);
+    
+    // Generate unique filename
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}.${fileExt}`;
+    const filePath = `uploads/${fileName}`;
+
+    console.log('[Upload] Attempting storage upload to:', filePath);
+    
+    // 1. First upload to storage
+    const { data: storageData, error: storageError } = await supabase
       .storage
       .from('project-files')
       .upload(filePath, file, {
-        upsert: false, // overwrite protection — same file name will fail if already exists
         cacheControl: '3600',
+        upsert: false,
         contentType: file.type,
-        onUploadProgress: (progressEvent) => {
-          const progress = Math.round(
-            (progressEvent.loaded / progressEvent.total) * 100
-          );
-          onProgress(progress);
-        },
+        onUploadProgress: (progress) => {
+          const percent = Math.round((progress.loaded / progress.total) * 100);
+          onProgress(percent);
+        }
       });
 
-    if (error) {
-      throw error;
+    if (storageError) {
+      console.error('[Upload] Storage error:', storageError);
+      throw storageError;
     }
 
-    const { data: { publicUrl } } = supabase
-      .storage
-      .from('project-files')
-      .getPublicUrl(filePath);
+    console.log('[Upload] Storage upload successful, now saving to plant_files');
+
+    // 2. Then save metadata to database
+    const { data: dbData, error: dbError } = await supabase
+      .from('plant_files')
+      .insert({
+        plant_id: plantId,
+        original_filename: file.name,
+        storage_path: filePath
+      })
+      .select()
+      .single();
+
+    if (dbError) {
+      console.error('[Upload] Database error:', dbError);
+      throw dbError;
+    }
+
+    console.log('[Upload] Database insert successful:', dbData);
 
     return {
       success: true,
-      path: filePath,
-      publicUrl,
-      fileName: file.name,
+      filePath,
+      originalFilename: file.name,
+      dbRecord: dbData
     };
   } catch (error) {
-    console.error('Upload error:', error);
-    throw new Error(error.message || 'File upload failed');
+    console.error('[Upload] Full error:', error);
+    throw error;
   }
 }

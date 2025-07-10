@@ -30,12 +30,24 @@ export const saveData = async (formData) => {
     // Prepare emissions data
     const emissionsData = { 
       plant_id: plant.id, 
-      date,   // Default target year
+      date,
     };
     
     for (let year = 2025; year <= 2030; year++) {
       emissionsData[`scope1_${year}`] = Number(formData.get(`scope1_${year}`)) || 0;
       emissionsData[`scope2_${year}`] = Number(formData.get(`scope2_${year}`)) || 0;
+    }
+
+    // Prepare renewable energy data
+    const renewableData = {
+      plant_id: plant.id,
+      date,
+    };
+
+    for (let year = 2025; year <= 2030; year++) {
+      renewableData[`solar_${year}`] = Number(formData.get(`solar_${year}`)) || 0;
+      renewableData[`wind_${year}`] = Number(formData.get(`wind_${year}`)) || 0;
+      renewableData[`others_${year}`] = Number(formData.get(`others_${year}`)) || 0;
     }
 
     // Save emissions data
@@ -45,19 +57,33 @@ export const saveData = async (formData) => {
 
     if (emissionsError) throw emissionsError;
 
-    return { success: true };
+    // Save renewable energy data
+    const { error: renewableError } = await supabase
+      .from('renewable_energy')
+      .upsert(renewableData, { onConflict: 'plant_id,date' });
+
+    if (renewableError) throw renewableError;
+
+    return { 
+      success: true,
+      businessId: business.id,
+      plantId: plant.id 
+    };
   } catch (error) {
     console.error('Save error:', error);
     return { success: false, error: error.message };
   }
 };
 
-export const uploadExcelFile = async (file, progressCallback) => {
+export const uploadExcelFile = async (file, plantId, progressCallback) => {
   try {
-    const fileName = `${Date.now()}_${file.name}`;
+    // Generate a unique filename to prevent conflicts
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}.${fileExt}`;
     const filePath = `uploads/${fileName}`;
 
-    const { data, error } = await supabase
+    // Upload file to storage
+    const { data, error: uploadError } = await supabase
       .storage
       .from('project-files')
       .upload(filePath, file, {
@@ -70,8 +96,24 @@ export const uploadExcelFile = async (file, progressCallback) => {
         }
       });
 
-    if (error) throw error;
-    return { success: true, filePath };
+    if (uploadError) throw uploadError;
+
+    // Save file metadata to database
+    const { error: dbError } = await supabase
+      .from('plant_files')
+      .insert({
+        plant_id: plantId,
+        original_filename: file.name,
+        storage_path: filePath
+      });
+
+    if (dbError) throw dbError;
+
+    return { 
+      success: true, 
+      filePath,
+      originalFilename: file.name 
+    };
   } catch (error) {
     console.error('Upload error:', error);
     throw error;

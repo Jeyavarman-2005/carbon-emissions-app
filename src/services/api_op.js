@@ -15,32 +15,77 @@ export const getBusinesses = async () => {
   }
 };
 
+export const getRenewableEnergyData = async (businessId, plantId) => {
+  try {
+    const { data, error } = await supabase
+      .from('renewable_energy')
+      .select('*')
+      .eq('plant_id', plantId)
+      .order('date', { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+    return data[0] || null;
+  } catch (error) {
+    console.error('Error fetching renewable energy data:', error);
+    return null;
+  }
+};
+
 export const getPlantData = async (businessId, plantId = null) => {
   try {
     if (plantId) {
-      const { data: plant, error: plantError } = await supabase
+      // Get complete plant data including latest file
+      const { data: plantData, error: plantError } = await supabase
         .from('plants')
-        .select('id, name, business:businesses(name)')
+        .select(`
+          id, 
+          name, 
+          business:businesses(name),
+          emissions:emissions!plant_id(
+            date, 
+            scope1_2025, scope2_2025, 
+            scope1_2026, scope2_2026, 
+            scope1_2027, scope2_2027, 
+            scope1_2028, scope2_2028, 
+            scope1_2029, scope2_2029, 
+            scope1_2030, scope2_2030
+          ),
+          renewable_energy:renewable_energy!plant_id(
+            date, 
+            solar_2025, wind_2025, others_2025,
+            solar_2026, wind_2026, others_2026,
+            solar_2027, wind_2027, others_2027,
+            solar_2028, wind_2028, others_2028,
+            solar_2029, wind_2029, others_2029,
+            solar_2030, wind_2030, others_2030
+          ),
+          files:plant_files!plant_id(
+            original_filename, 
+            storage_path, 
+            uploaded_at
+          )
+        `)
         .eq('id', plantId)
+        .order('date', { foreignTable: 'emissions', ascending: false })
+        .order('date', { foreignTable: 'renewable_energy', ascending: false })
+        .order('uploaded_at', { foreignTable: 'plant_files', ascending: false })
+        .limit(1, { foreignTable: 'emissions' })
+        .limit(1, { foreignTable: 'renewable_energy' })
+        .limit(1, { foreignTable: 'plant_files' })
         .single();
 
       if (plantError) throw plantError;
 
-      const { data: emissions, error: emissionsError } = await supabase
-        .from('emissions')
-        .select('*')
-        .eq('plant_id', plantId)
-        .order('date', { ascending: false })
-        .limit(1)
-        .single();
-
       return {
-        businessName: plant.business.name,
-        plantName: plant.name, // Add plant name to response
-        emissionsData: emissions
+        businessName: plantData.business.name,
+        plantName: plantData.name,
+        emissionsData: plantData.emissions[0] || null,
+        renewableData: plantData.renewable_energy[0] || null,
+        fileInfo: plantData.files[0] || null
       };
     } else {
-      // Get all plants for business
+      // Get all plants for business (no emissions, renewable or file data)
       const { data: plants, error: plantsError } = await supabase
         .from('plants')
         .select('id, name')
@@ -51,8 +96,11 @@ export const getPlantData = async (businessId, plantId = null) => {
 
       return {
         plants: plants || [],
+        businessName: '',
+        plantName: '',
         emissionsData: null,
-        businessName: ''
+        renewableData: null,
+        fileInfo: null
       };
     }
   } catch (error) {
@@ -61,19 +109,35 @@ export const getPlantData = async (businessId, plantId = null) => {
   }
 };
 
-export const downloadExcelFile = async (businessName, plantName) => {
+export const downloadExcelFile = async (storagePath) => {
   try {
-    const fileName = `${businessName}_${plantName}.xlsx`;
     const { data, error } = await supabase
       .storage
       .from('project-files')
-      .download(`uploads/${fileName}`);
+      .download(storagePath);
 
     if (error) throw error;
-
     return data;
   } catch (error) {
     console.error('Error downloading file:', error);
     throw error;
+  }
+};
+
+export const getLatestPlantFile = async (plantId) => {
+  try {
+    const { data, error } = await supabase
+      .from('plant_files')
+      .select('original_filename, storage_path, uploaded_at')
+      .eq('plant_id', plantId)
+      .order('uploaded_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error fetching plant file:', error);
+    return null;
   }
 };
