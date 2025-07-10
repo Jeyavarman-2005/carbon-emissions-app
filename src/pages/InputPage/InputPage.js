@@ -40,19 +40,28 @@ const InputPage = () => {
         formData.append(`scope2_${year}`, data[`scope2_${year}`] || 0);
       }
 
+       for (let year = 2025; year <= 2030; year++) {
+        formData.append(`solar_${year}`, data[`solar_${year}`] || 0);
+        formData.append(`wind_${year}`, data[`wind_${year}`] || 0);
+        formData.append(`others_${year}`, data[`others_${year}`] || 0);
+      }
+
       const result = await saveData(formData);
       
       if (result.success) {
-        alert('Data saved successfully to Google Sheets!');
-        navigate('/success'); // Optional: redirect to success page
-      } else {
-        alert('Error saving data: ' + (result.error || 'Unknown error'));
+      // Upload file if one was selected
+      if (file && result.plantId) {
+        await handleFileUpload(result.plantId);
       }
-    } catch (error) {
-      console.error('Submission error:', error);
-      alert('Error saving data: ' + error.message);
+      
+      alert('Data saved successfully to Database!');
+      navigate('/success');
     }
-  };
+  } catch (error) {
+    console.error('Submission error:', error);
+    alert('Error saving data: ' + error.message);
+  }
+};
 
   const handleFileChange = (e) => {
     if (!formValid) {
@@ -72,30 +81,35 @@ const InputPage = () => {
     }
   };
 
-  const handleFileUpload = async () => {
-    if (!formValid) {
-      alert('Please enter Business Name and Plant Name first');
-      return;
-    }
+  const handleFileUpload = async (plantId) => {
+  if (!formValid) {
+    alert('Please enter Business Name and Plant Name first');
+    return;
+  }
 
-    if (!file) {
-      alert('Please select a file first');
-      return;
-    }
+  if (!file) {
+    alert('Please select a file first');
+    return;
+  }
 
-    try {
-      setUploadStatus('uploading');
-      await uploadExcelFile(file, (progress) => {
-        setUploadProgress(progress);
-      });
+  try {
+    setUploadStatus('uploading');
+    const result = await uploadExcelFile(file, plantId, (progress) => {
+      setUploadProgress(progress);
+    });
+    
+    if (result.success) {
       setUploadStatus('success');
       alert('File uploaded successfully!');
-    } catch (error) {
-      console.error('Upload error:', error);
-      setUploadStatus('error');
-      alert('Error uploading file: ' + error.message);
+    } else {
+      throw new Error('Upload failed');
     }
-  };
+  } catch (error) {
+    console.error('Upload error:', error);
+    setUploadStatus('error');
+    alert('Error uploading file: ' + error.message);
+  }
+};
 
   return (
     <div className={styles.dashboard}>
@@ -133,7 +147,7 @@ const InputPage = () => {
             </div>
           </section>
           
-          {/* Main Data Section - Only Emissions Table now */}
+           {/* Main Data Section */}
           <section className={styles.dataSection}>
             <div className={styles.emissionsCard}>
               <div className={styles.cardHeader}>
@@ -177,6 +191,76 @@ const InputPage = () => {
                             type="number"
                             step="0.01"
                             className={`${styles.tableInput} ${errors[`scope2_${year}`] ? styles.errorInput : ''}`}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* New Renewable Energy Table */}
+            <div className={`${styles.emissionsCard} ${styles.renewableCard}`}>
+              <div className={styles.cardHeader}>
+                <FiTrendingUp className={styles.cardIcon} />
+                <h3>Renewable Energy in Percentage (%)</h3>
+              </div>
+              <div className={styles.tableContainer}>
+                <table className={styles.emissionsTable}>
+                  <thead>
+                    <tr>
+                      <th>Source</th>
+                      {[2025,2026, 2027, 2028, 2029, 2030].map(year => (
+                        <th key={year}>{year}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Solar</td>
+                      {[2025,2026, 2027, 2028, 2029, 2030].map(year => (
+                        <td key={`solar-${year}`}>
+                          <input 
+                            {...register(`solar_${year}`, { 
+                              min: { value: 0, message: "Must be positive" },
+                              max: { value: 100, message: "Cannot exceed 100%" }
+                            })}
+                            type="number"
+                            step="0.01"
+                            className={`${styles.tableInput} ${errors[`solar_${year}`] ? styles.errorInput : ''}`}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td>Wind</td>
+                      {[2025,2026, 2027, 2028, 2029, 2030].map(year => (
+                        <td key={`wind-${year}`}>
+                          <input 
+                            {...register(`wind_${year}`, { 
+                              min: { value: 0, message: "Must be positive" },
+                              max: { value: 100, message: "Cannot exceed 100%" }
+                            })}
+                            type="number"
+                            step="0.01"
+                            className={`${styles.tableInput} ${errors[`wind_${year}`] ? styles.errorInput : ''}`}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td>Others</td>
+                      {[2025,2026, 2027, 2028, 2029, 2030].map(year => (
+                        <td key={`others-${year}`}>
+                          <input 
+                            {...register(`others_${year}`, { 
+                              min: { value: 0, message: "Must be positive" },
+                              max: { value: 100, message: "Cannot exceed 100%" }
+                            })}
+                            type="number"
+                            step="0.01"
+                            className={`${styles.tableInput} ${errors[`others_${year}`] ? styles.errorInput : ''}`}
                           />
                         </td>
                       ))}

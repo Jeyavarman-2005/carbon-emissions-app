@@ -285,13 +285,6 @@
   box-shadow: var(--shadow-sm);
 }
 
-.templateNote {
-  margin:0rem;
-  padding: 0.5rem;
-  text-align: center;
-  font-size: 1rem;
-}
-
 .downloadLink {
   display: flex;
   align-items: center;
