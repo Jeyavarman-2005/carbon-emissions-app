@@ -1,18 +1,304 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useReducer, useMemo, useCallback } from 'react';
 import { getBusinesses, getPlantData, downloadExcelFile } from '../../services/api_op';
 import { filterProjects } from '../../services/projectFilterService';
 import { prepareChartDataWithTarget } from './reductionTargetService';
-import { prepareRenewableEnergyData } from './renewableEnergyService';
 import Header from '../../components/Header/Header';
 import Footer from '../../components/Footer/Footer';
-import { handleExcelDownload } from './downloadExcel';
-import styles from './DashboardPage.module.css';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Line, ComposedChart, LabelList, Label } from 'recharts';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
+import { ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Line, LabelList, Label } from 'recharts';
 import { FiBriefcase, FiPackage, FiSettings, FiArrowRight, FiLoader, FiDownload } from 'react-icons/fi';
 import { FiCalendar, FiDollarSign, FiTrendingUp, FiLock, FiUnlock, FiCheck } from 'react-icons/fi';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { throttle } from 'lodash';
 import * as XLSX from 'xlsx';
+import styles from './DashboardPage.module.css';
+
+// Reducer for project parameters
+const paramsReducer = (state, action) => {
+  switch (action.type) {
+    case 'UPDATE_DATE':
+      return { ...state, targetDate: action.payload };
+    case 'UPDATE_INVESTMENT':
+      return { ...state, investment: action.payload };
+    case 'UPDATE_EMISSION':
+      return { ...state, carbonEmission: action.payload };
+    case 'COMMIT_PARAMS':
+      return { ...state, committed: true, ...action.payload };
+    default:
+      return state;
+  }
+};
+
+// Memoized Chart Components
+const EmissionsChart = React.memo(({ data, loading }) => {
+  if (loading) return (
+    <div className={styles.chartPlaceholder}>
+      <div className={styles.placeholderContent}>
+        <FiLoader className={styles.spinner} style={{ fontSize: '2rem' }} />
+        <p>Loading emissions data...</p>
+      </div>
+    </div>
+  );
+
+  if (!data) return (
+    <div className={styles.chartPlaceholder}>
+      <div className={styles.placeholderContent}>
+        <h3>No Chart Data</h3>
+        <p>Select a business and plant to view emissions visualization</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <ResponsiveContainer width="100%" height="90%">
+      <ComposedChart
+        data={data}
+        margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+        <XAxis 
+          dataKey="year" 
+          tick={{ fill: '#6B7280' }}
+          axisLine={{ stroke: '#E5E7EB' }}
+          padding={{ left: 20, right: 20 }}
+        />
+        <YAxis 
+          label={{ 
+            value: 'Carbon Emission in kg', 
+            angle: -90, 
+            position: 'insideLeft',
+            fill: '#6B7280',
+            fontWeight:"bold",
+            dy: 100
+          }}
+          tick={{ fill: '#6B7280' }}
+          axisLine={{ stroke: '#E5E7EB' }}
+        />
+        <Tooltip 
+          formatter={(value, name) => {
+            if (name === 'targetValue') return [`${value} tons`, 'Reduction Target'];
+            return [`${value} tons`, name];
+          }}
+          contentStyle={{
+            backgroundColor: '#fff',
+            border: '1px solid #E5E7EB',
+            borderRadius: '6px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+          }}
+        />
+        <Bar 
+          dataKey="scope1" 
+          name="Scope 1" 
+          stackId="a" 
+          fill="#3B82F6"
+          radius={[4, 4, 0, 0]}
+          barSize={50}
+        >
+          <LabelList 
+            dataKey="scope1" 
+            position="inside" 
+            formatter={(value) => value > 0 ? `S1` : ''}
+            fill="#fff"
+          />
+        </Bar>
+        <Bar 
+          dataKey="scope2" 
+          name="Scope 2" 
+          stackId="a" 
+          fill="#10B981"
+          radius={[4, 4, 0, 0]}
+          barSize={50}
+        >
+          <LabelList 
+            dataKey="scope2" 
+            position="inside" 
+            formatter={(value) => value > 0 ? `S2` : ''}
+            fill="#fff"
+          />
+        </Bar>
+        <Bar 
+          dataKey="total" 
+          name="Total" 
+          fill="transparent"
+        >
+          <LabelList
+            dataKey="total"
+            position="top"
+            fill="#374151"
+            content={(props) => {
+              const { x, y, value } = props;
+              return (
+                <text
+                  x={x - 30}
+                  y={y-5}
+                  fill="#374151"
+                  textAnchor="middle"
+                  fontSize={16}  
+                  fontWeight="bold" 
+                >
+                  {`Total: ${value}`}
+                </text>
+              );
+            }}
+          />
+        </Bar>
+        <Line
+          type="monotone"
+          dataKey="targetValue"
+          stroke="#EF4444"
+          strokeWidth={2}
+          dot={{ r: 4, fill: '#EF4444' }}
+          activeDot={{ r: 6, stroke: '#EF4444', strokeWidth: 2, fill: '#fff' }}
+          name="Reduction Target"
+        />
+        {data.map((entry, index) => (
+          entry.reduction && (
+            <Label
+              key={`reduction-label-${index}`}
+              value={`Reduction: ${entry.reduction.toFixed(2)} kg`}
+              position="top"
+              offset={10}
+              fill="#EF4444"
+              fontWeight="bold"
+            />
+          )
+        ))}
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}, (prevProps, nextProps) => {
+  return JSON.stringify(prevProps.data) === JSON.stringify(nextProps.data) && 
+         prevProps.loading === nextProps.loading;
+});
+
+const RenewableChart = React.memo(({ data, loading }) => {
+  if (loading) return (
+    <div className={styles.chartPlaceholder}>
+      <div className={styles.placeholderContent}>
+        <FiLoader className={styles.spinner} style={{ fontSize: '2rem' }} />
+        <p>Loading renewable energy data...</p>
+      </div>
+    </div>
+  );
+
+  if (!data) return (
+    <div className={styles.chartPlaceholder}>
+      <p>No renewable energy data available</p>
+    </div>
+  );
+
+  return (
+    <ResponsiveContainer width="100%" height={400}>
+      <ComposedChart
+        data={data}
+        margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+        <XAxis 
+          dataKey="year"
+          tick={{ fill: '#6B7280' }}
+          axisLine={{ stroke: '#E5E7EB' }}
+        />
+        <YAxis 
+          domain={[0, 100]}
+          label={{
+            value: 'Percentage (%)',
+            angle: -90,
+            position: 'insideLeft',
+            fill: '#6B7280',
+            fontWeight: 'bold',
+            dy: 50
+          }}
+        />
+        <Tooltip 
+          formatter={(value, name) => {
+            if (name === 'total') return [`${value}%`, 'Total Renewable'];
+            return [`${value}%`, name];
+          }}
+          contentStyle={{
+            backgroundColor: '#fff',
+            border: '1px solid #E5E7EB',
+            borderRadius: '6px'
+          }}
+        />
+        <Bar 
+          dataKey="solar" 
+          name="Solar" 
+          stackId="a" 
+          fill="#FFA500"
+          radius={[4, 4, 0, 0]}
+          barSize={50}
+        >
+          <LabelList 
+            dataKey="solar" 
+            position="inside" 
+            formatter={(value) => value > 0 ? 'S' : ''}
+            fill="#fff"
+          />
+        </Bar>
+        <Bar 
+          dataKey="wind" 
+          name="Wind" 
+          stackId="a" 
+          fill="#1E90FF"
+          radius={[4, 4, 0, 0]}
+          barSize={50}
+        >
+          <LabelList 
+            dataKey="wind" 
+            position="inside" 
+            formatter={(value) => value > 0 ? 'W' : ''}
+            fill="#fff"
+          />
+        </Bar>
+        <Bar 
+          dataKey="others" 
+          name="Others" 
+          stackId="a" 
+          fill="#9370DB"
+          radius={[4, 4, 0, 0]}
+          barSize={50}
+        >
+          <LabelList 
+            dataKey="others" 
+            position="inside" 
+            formatter={(value) => value > 0 ? 'O' : ''}
+            fill="#fff"
+          />
+        </Bar>
+        <Bar 
+          dataKey="total" 
+          name="Total" 
+          fill="transparent"
+        >
+          <LabelList
+            dataKey="total"
+            position="top"
+            fill="#374151"
+            content={(props) => {
+              const { x, y, value } = props;
+              return (
+                <text
+                  x={x - 30}
+                  y={y-5}
+                  fill="#374151"
+                  textAnchor="middle"
+                  fontSize={16}  
+                  fontWeight="bold" 
+                >
+                  {`Total: ${value}`}
+                </text>
+              );
+            }}
+          />
+        </Bar>
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}, (prevProps, nextProps) => {
+  return JSON.stringify(prevProps.data) === JSON.stringify(nextProps.data) && 
+         prevProps.loading === nextProps.loading;
+});
 
 const DashboardPage = () => {
   const [businesses, setBusinesses] = useState([]);
@@ -31,7 +317,8 @@ const DashboardPage = () => {
     plants: false,
     emissions: false,
     projects: false,
-    download: false
+    download: false,
+    submit: false 
   });
   const [error, setError] = useState('');
   const [projectParams, setProjectParams] = useState({
@@ -49,13 +336,73 @@ const DashboardPage = () => {
   const [filteredProjects, setFilteredProjects] = useState([]);
   const [allProjects, setAllProjects] = useState([]);
 
+  // Use reducer for parameters
+  const [params, dispatch] = useReducer(paramsReducer, {
+    targetDate: new Date(),
+    investment: '',
+    carbonEmission: '',
+    committed: false
+  });
+  const handleExcelDownload = async (
+    response,
+    setAllProjects,
+    setFilteredProjects,
+    setTopProjects,
+    setError,
+    businessName,
+    plantName
+  ) => {
+    console.log('[ExcelDownload] Starting download...');
+    console.log('[ExcelDownload] Incoming response:', response);
+  
+    try {
+      if (!response?.fileInfo?.storage_path) {
+        console.warn('[ExcelDownload] No storage path found in response.');
+        setError('No project file available for this plant');
+        return false;
+      }
+  
+      console.log('[ExcelDownload] Downloading file from:', response.fileInfo.storage_path);
+      const file = await downloadExcelFile(response.fileInfo.storage_path);
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer);
+      const projects = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+      
+      console.log(`[ExcelDownload] Loaded ${projects.length} projects`);
+      
+      setAllProjects(projects);
+      setFilteredProjects(projects);
+      
+      const initialTop5 = projects
+        .sort((a, b) => b['Estimated Carbon Reduction in Kg/CO2 per annum'] - 
+                        a['Estimated Carbon Reduction in Kg/CO2 per annum'])
+        .slice(0, 5)
+        .map((p, i) => ({
+          id: i + 1,
+          name: (p['Project Information in details']),
+          reduction: (p['Estimated Carbon Reduction in Kg/CO2 per annum']).toFixed(2),
+          investment: p['Estimated Investment in Rs.'].toLocaleString(),
+          TimeTaken: p['Estimated Timeline in months']
+        }));
+      
+      setTopProjects(initialTop5);
+      
+      return true;
+    } catch (err) {
+      console.error('[ExcelDownload] Error:', err);
+      setError(`Failed to load project data: ${err.message}`);
+      return false;
+    }
+  };
+
   useEffect(() => {
     if (emissionsData && !initialEmissionsData) {
       setInitialEmissionsData({...emissionsData});
     }
   }, [emissionsData]);
 
-  useEffect(() => {
+  // Load businesses on mount
+    useEffect(() => {
     const loadBusinesses = async () => {
       try {
         setLoading(prev => ({ ...prev, businesses: true }));
@@ -166,65 +513,80 @@ const DashboardPage = () => {
   }
 }, [selectedBusiness, selectedPlant]);
 
-  const prepareRenewableChartData = () => {
-  if (!renewableData) return [];
-  
-  // Transform the renewableData object into chart-friendly format
-  const years = [2025, 2026, 2027, 2028, 2029, 2030];
-  return years.map(year => ({
-    year,
-    solar: renewableData[`solar_${year}`] || 0,
-    wind: renewableData[`wind_${year}`] || 0,
-    others: renewableData[`others_${year}`] || 0
-  }));
-};
-  const renewableChartData = prepareRenewableChartData();
+  // Store initial emissions data
+  useEffect(() => {
+    if (emissionsData && !initialEmissionsData) {
+      setInitialEmissionsData({...emissionsData});
+    }
+  }, [emissionsData]);
 
-  const handleManualDownload = async () => {
-    setLoading(prev => ({ ...prev, download: true }));
-    const success = await handleExcelDownload(
-      businesses,
-      plants,
-      selectedBusiness,
-      selectedPlant,
-      setAllProjects,
-      setFilteredProjects,
-      setTopProjects,
-      setError,
-      selectedBusinessName,
-      selectedPlantName
-    );
-    setLoading(prev => ({ ...prev, download: false }));
-    return success;
-  };
+  // Throttled parameter handlers
+  const throttledHandleParamChange = useMemo(
+    () => throttle((e) => {
+      const { name, value } = e.target;
+      dispatch({ 
+        type: name === 'investment' ? 'UPDATE_INVESTMENT' : 'UPDATE_EMISSION',
+        payload: value
+      });
+    }, 300),
+    []
+  );
 
-  const prepareChartData = () => {
+  const handleDateChange = useCallback((date) => {
+    dispatch({ type: 'UPDATE_DATE', payload: date });
+  }, []);
+
+  // Memoized chart data
+  const chartData = useMemo(() => {
     if (!emissionsData) return [];
-    const paramsToUse = committedParams || projectParams;
-    const emissionsDataForChart = {...emissionsData};
     return prepareChartDataWithTarget(
-      emissionsDataForChart,
       emissionsData,
-      paramsToUse,
+      params,
       isSubmitted,
       filteredProjects
     );
-  };
+  }, [emissionsData, params, isSubmitted, filteredProjects]);
+
+  const renewableChartData = useMemo(() => {
+    if (!renewableData) return [];
+    const years = [2025, 2026, 2027, 2028, 2029, 2030];
+    return years.map(year => ({
+      year,
+      solar: renewableData[`solar_${year}`] || 0,
+      wind: renewableData[`wind_${year}`] || 0,
+      others: renewableData[`others_${year}`] || 0,
+      total: (renewableData[`solar_${year}`] || 0) + 
+             (renewableData[`wind_${year}`] || 0) + 
+             (renewableData[`others_${year}`] || 0)
+    }));
+  }, [renewableData]);
 
   const handleSubmitParams = async () => {
     try {
       setLoading(prev => ({ ...prev, projects: true }));
       setIsSubmitted(true);
-      setCommittedParams({...projectParams});
+      setCommittedParams({...params});
+      
+      // Show loading state for top projects
+      setTopProjects([
+        { id: 1, name: 'Loading...', reduction: '--', investment: '--', TimeTaken: '--' },
+        { id: 2, name: 'Loading...', reduction: '--', investment: '--', TimeTaken: '--' },
+        { id: 3, name: 'Loading...', reduction: '--', investment: '--', TimeTaken: '--' },
+        { id: 4, name: 'Loading...', reduction: '--', investment: '--', TimeTaken: '--' },
+        { id: 5, name: 'Loading...', reduction: '--', investment: '--', TimeTaken: '--' }
+      ]);
+      
       const { filteredProjects, topProjects, summary, message } = 
         await filterProjects(allProjects, {
-          investment: projectParams.investment,
-          carbonEmission: projectParams.carbonEmission,
-          targetDate: projectParams.targetDate.toISOString()
+          investment: params.investment,
+          carbonEmission: params.carbonEmission,
+          targetDate: params.targetDate.toISOString()
         });
+      
       setTopProjects(topProjects);
       setFilteredProjects(filteredProjects);
       setEmissionsData(prev => ({...prev}));
+      
       if (filteredProjects.length === 0) {
         alert(message || 'No projects matched your criteria. Try adjusting parameters.');
       } else {
@@ -256,12 +618,12 @@ const DashboardPage = () => {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(
         filteredProjects.map(p => ({
-          'Project': p.Project,
+          'Project': (p['Project Information in details']),
           'Category': p.Category,
           'Approach': p.Approach,
           'Carbon Reduction (Kg)': (p['Estimated Carbon Reduction in Kg/CO2 per annum']),
           'Investment (Rs.)': p['Estimated Investment in Rs.'],
-          'Timeline': p['Estimated Timeline']
+          'Timeline': p['Estimated Timeline in months']
         }))
       );
       XLSX.utils.book_append_sheet(wb, ws, "Filtered Projects");
@@ -275,27 +637,25 @@ const DashboardPage = () => {
     }
   };
 
-  const handleParamChange = (e) => {
-    const { name, value } = e.target;
-    setProjectParams(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  const handleDateChange = (date) => {
-    setProjectParams(prev => ({
-      ...prev,
-      targetDate: date
-    }));
-  };
-
-  const chartData = prepareChartData();
 
   return (
     <div className={styles.dashboardContainer}>
       <Header />
       
+      {loading.submit && (
+        <div className={styles.loadingOverlay}>
+          <FiLoader className={styles.spinner} />
+          <p>Optimizing projects based on your constraints...</p>
+        </div>
+      )}
+
+      {error && (
+        <div className={styles.errorBanner}>
+          <p>{error}</p>
+          <button onClick={() => setError('')}>Dismiss</button>
+        </div>
+      )}
+
       <div className={styles.topSection}>
         <div className={styles.businessSelector}>
           <div className={styles.cardHeader}>
@@ -353,7 +713,7 @@ const DashboardPage = () => {
               <div className={styles.inputGroup}>
                 <label>Target Year</label>
                 <DatePicker
-                  selected={projectParams.targetDate}
+                  selected={params.targetDate}
                   onChange={handleDateChange}
                   dateFormat="MM/yyyy"
                   showMonthYearPicker
@@ -371,8 +731,8 @@ const DashboardPage = () => {
                   <input
                     type="number"
                     name="investment"
-                    value={projectParams.investment}
-                    onChange={handleParamChange}
+                    value={params.investment}
+                    onChange={throttledHandleParamChange}
                     placeholder="0.00"
                     min="0"
                   />
@@ -383,8 +743,8 @@ const DashboardPage = () => {
                 <input
                   type="number"
                   name="carbonEmission"
-                  value={projectParams.carbonEmission}
-                  onChange={handleParamChange}
+                  value={params.carbonEmission}
+                  onChange={throttledHandleParamChange}
                   placeholder="0.00"
                   min="0"
                 />
@@ -394,9 +754,9 @@ const DashboardPage = () => {
               <button
                 className={styles.saveButton}
                 onClick={handleSubmitParams}
-                disabled={!selectedBusiness || !selectedPlant || loading.projects}
+                disabled={!selectedBusiness || !selectedPlant || loading.submit}
               >
-                {loading.projects ? (
+                {loading.submit ? (
                   <FiLoader className={styles.spinner} />
                 ) : (
                   <>
@@ -410,25 +770,9 @@ const DashboardPage = () => {
         </div>
       </div>
 
-      {loading.projects && (
-        <div className={styles.loadingOverlay}>
-          <FiLoader className={styles.spinner} />
-          <p>Filtering projects...</p>
-        </div>
-      )}
-
-      {error && (
-        <div className={styles.errorBanner}>
-          <p>{error}</p>
-          <button onClick={() => setError('')}>Dismiss</button>
-        </div>
-      )}
-
       <div className={styles.mainContent}>
-  {/* ✅ LEFT COLUMN starts */}
-  <div className={styles.leftColumn}>
-
-     <div className={styles.chartSection}>
+        <div className={styles.leftColumn}>
+          <div className={styles.chartSection}>
             <div className={styles.sectionHeader}>
               <h2>EMISSIONS OVERVIEW</h2>
               <div className={styles.legend}>
@@ -446,385 +790,164 @@ const DashboardPage = () => {
                 </div>
               </div>
             </div>
-            
             <div className={styles.chartWrapper}>
-              <ResponsiveContainer width="100%" height="90%">
-                {loading.emissions ? (
-                  <div className={styles.chartPlaceholder}>
-                    <div className={styles.placeholderContent}>
-                      <FiLoader className={styles.spinner} style={{ fontSize: '2rem' }} />
-                      <p>Loading emissions data...</p>
-                    </div>
-                  </div>
-                ) : emissionsData ? (
-                  <ComposedChart
-                    data={chartData}
-                    margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis 
-                      dataKey="year" 
-                      tick={{ fill: '#6B7280' }}
-                      axisLine={{ stroke: '#E5E7EB' }}
-                      padding={{ left: 20, right: 20 }}
-                    />
-                    <YAxis 
-                      label={{ 
-                        value: 'Carbon Emission in kg', 
-                        angle: -90, 
-                        position: 'insideLeft',
-                        fill: '#6B7280',
-                        fontWeight:"bold" ,
-                        dy: 100
-                      }}
-                      tick={{ fill: '#6B7280' }}
-                      axisLine={{ stroke: '#E5E7EB' }}
-                    />
-                    <Tooltip 
-                      formatter={(value, name) => {
-                        if (name === 'targetValue') return [`${value} tons`, 'Reduction Target'];
-                        return [`${value} tons`, name];
-                      }}
-                      contentStyle={{
-                        backgroundColor: '#fff',
-                        border: '1px solid #E5E7EB',
-                        borderRadius: '6px',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                      }}
-                    />
-                    <Bar 
-                      dataKey="scope1" 
-                      name="Scope 1" 
-                      stackId="a" 
-                      fill="#3B82F6"
-                      radius={[4, 4, 0, 0]}
-                      barSize={50}
-                    >
-                      <LabelList 
-                        dataKey="scope1" 
-                        position="inside" 
-                        formatter={(value) => value > 0 ? `S1` : ''}
-                        fill="#fff"
-                      />
-                    </Bar>
-                    <Bar 
-                      dataKey="scope2" 
-                      name="Scope 2" 
-                      stackId="a" 
-                      fill="#10B981"
-                      radius={[4, 4, 0, 0]}
-                      barSize={50}
-                    >
-                      <LabelList 
-                        dataKey="scope2" 
-                        position="inside" 
-                        formatter={(value) => value > 0 ? `S2` : ''}
-                        fill="#fff"
-                      />
-                    </Bar>
-                    <Bar 
-                      dataKey="total" 
-                      name="Total" 
-                      fill="transparent"
-                    >
-                      <LabelList
-                        dataKey="total"
-                        position="top"
-                        fill="#374151"
-                        content={(props) => {
-                          const { x, y, value } = props;
-                          return (
-                            <text
-                              x={x - 30}
-                              y={y-5}
-                              fill="#374151"
-                              textAnchor="middle"
-                              fontSize={16}  
-                              fontWeight="bold" 
-                            >
-                              {`Total: ${value}`}
-                            </text>
-                          );
-                        }}
-                      />
-                    </Bar>
-                    <Line
-                      type="monotone"
-                      dataKey="targetValue"
-                      stroke="#EF4444"
-                      strokeWidth={2}
-                      dot={{ r: 4, fill: '#EF4444' }}
-                      activeDot={{ r: 6, stroke: '#EF4444', strokeWidth: 2, fill: '#fff' }}
-                      name="Reduction Target"
-                    />
-                    {/* Add this custom label for the reduction value */}
-  {chartData.map((entry, index) => (
-    entry.reduction && (
-      <Label
-        key={`reduction-label-${index}`}
-        value={`Reduction: ${entry.reduction.toFixed(2)} kg`}
-        position="top"
-        offset={10}
-        fill="#EF4444"
-        fontWeight="bold"
-      />
-    )
-  ))}
-                  </ComposedChart>
-                ) : (
-                  <div className={styles.chartPlaceholder}>
-                    <div className={styles.placeholderContent}>
-                      <h3>No Chart Data</h3>
-                      <p>Select a business and plant to view emissions visualization</p>
-                    </div>
-                  </div>
-                )}
-              </ResponsiveContainer>
+              <EmissionsChart 
+                data={chartData} 
+                loading={loading.emissions} 
+              />
             </div>
           </div>
 
-    {/* ✅ 2️⃣ Renewable Energy Mix Chart */}
-    <div className={styles.chartSection} style={{ marginTop: '2rem' }}>
-  <div className={styles.sectionHeader}>
-    <h2>RENEWABLE ENERGY MIX (%)</h2>
-    <div className={styles.legend}>
-      <div className={styles.legendItem}>
-        <span className={`${styles.legendColor} ${styles.solar}`}></span>
-        <span>Solar</span>
-      </div>
-      <div className={styles.legendItem}>
-        <span className={`${styles.legendColor} ${styles.wind}`}></span>
-        <span>Wind</span>
-      </div>
-      <div className={styles.legendItem}>
-        <span className={`${styles.legendColor} ${styles.others}`}></span>
-        <span>Others</span>
-      </div>
-    </div>
-  </div>
-  <div className={styles.chartWrapper}>
-    <ResponsiveContainer width="100%" height={400}>
-      {loading.emissions ? (
-        <div className={styles.chartPlaceholder}>
-          <div className={styles.placeholderContent}>
-            <FiLoader className={styles.spinner} style={{ fontSize: '2rem' }} />
-            <p>Loading renewable energy data...</p>
+          <div className={styles.chartSection} style={{ marginTop: '2rem' }}>
+            <div className={styles.sectionHeader}>
+              <h2>RENEWABLE ENERGY MIX (%)</h2>
+              <div className={styles.legend}>
+                <div className={styles.legendItem}>
+                  <span className={`${styles.legendColor} ${styles.solar}`}></span>
+                  <span>Solar</span>
+                </div>
+                <div className={styles.legendItem}>
+                  <span className={`${styles.legendColor} ${styles.wind}`}></span>
+                  <span>Wind</span>
+                </div>
+                <div className={styles.legendItem}>
+                  <span className={`${styles.legendColor} ${styles.others}`}></span>
+                  <span>Others</span>
+                </div>
+              </div>
+            </div>
+            <div className={styles.chartWrapper}>
+              <RenewableChart 
+                data={renewableChartData} 
+                loading={loading.emissions} 
+              />
+            </div>
           </div>
         </div>
-      ) : renewableData ? (
-        <BarChart
-          data={prepareRenewableChartData()}
-          margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
-          barCategoryGap="25%"
-          barGap={10}
-        >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="year"
-                tick={{ fill: '#6B7280' }}
-                axisLine={{ stroke: '#E5E7EB' }}
-              />
-              <YAxis 
-                domain={[0, 100]}
-                label={{
-                  value: 'Percentage (%)',
-                  angle: -90,
-                  position: 'insideLeft',
-                  fill: '#6B7280',
-                  fontWeight: 'bold'
-                }}
-              />
-              <Tooltip 
-                formatter={(value) => [`${value}%`]}
-                contentStyle={{
-                  backgroundColor: '#fff',
-                  border: '1px solid #E5E7EB',
-                  borderRadius: '6px'
-                }}
-              />
-              <Legend />
-              <Bar 
-                dataKey="solar"
-                name="Solar"
-                fill="#FFA500"
-                radius={[4, 4, 0, 0]}
+
+        <div className={styles.rightColumn}>
+          <div className={styles.tableSection}>
+            <div className={styles.sectionHeader}>
+              <h2>CARBON EMISSIONS</h2>
+              <span className={styles.units}>Kgs/year</span>
+            </div>
+            <div className={styles.tableWrapper}>
+              <table className={styles.emissionsTable}>
+                <thead>
+                  <tr>
+                    <th>SCOPE</th>
+                    {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
+                      <th key={year}>{year}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {emissionsData ? (
+                    <>
+                      <tr>
+                        <td>Scope 1</td>
+                        {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
+                          <td key={`scope1-${year}`}>
+                            {emissionsData[`scope1_${year}`]?.toFixed(2) || '0.00'}
+                          </td>
+                        ))}
+                      </tr>
+                      <tr>
+                        <td>Scope 2</td>
+                        {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
+                          <td key={`scope2-${year}`}>
+                            {emissionsData[`scope2_${year}`]?.toFixed(2) || '0.00'}
+                          </td>
+                        ))}
+                      </tr>
+                      <tr className={styles.totalRow}>
+                        <td>TOTAL</td>
+                        {[2025, 2026, 2027, 2028, 2029, 2030].map(year => {
+                          const scope1 = emissionsData[`scope1_${year}`] || 0;
+                          const scope2 = emissionsData[`scope2_${year}`] || 0;
+                          return (
+                            <td key={`total-${year}`}>
+                              {(scope1 + scope2).toFixed(2)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    </>
+                  ) : (
+                    <>
+                      <tr>
+                        <td>Scope 1</td>
+                        {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
+                          <td key={`scope1-${year}`}>--</td>
+                        ))}
+                      </tr>
+                      <tr>
+                        <td>Scope 2</td>
+                        {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
+                          <td key={`scope2-${year}`}>--</td>
+                        ))}
+                      </tr>
+                      <tr className={styles.totalRow}>
+                        <td>TOTAL</td>
+                        {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
+                          <td key={`total-${year}`}>--</td>
+                        ))}
+                      </tr>
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className={styles.tableSection}>
+            <div className={styles.sectionHeader}>
+              <h2>TOP PROJECTS</h2>
+              <span className={styles.units}>potential impact</span>
+              <button 
+                onClick={handleDownloadProjects}
+                className={styles.downloadButton}
+                disabled={topProjects[0].name === '--' || loading.download}
               >
-                <LabelList 
-                  dataKey="solar" 
-                  position="top" 
-                  formatter={(value) => `${value}%`}
-                  fill="#FFA500"
-                />
-              </Bar>
-              <Bar 
-                dataKey="wind"
-                name="Wind"
-                fill="#1E90FF"
-                radius={[4, 4, 0, 0]}
-              >
-                <LabelList 
-                  dataKey="wind" 
-                  position="top" 
-                  formatter={(value) => `${value}%`}
-                  fill="#1E90FF"
-                />
-              </Bar>
-              <Bar 
-                dataKey="others"
-                name="Others"
-                fill="#9370DB"
-                radius={[4, 4, 0, 0]}
-              >
-                <LabelList 
-                  dataKey="others" 
-                  position="top" 
-                  formatter={(value) => `${value}%`}
-                  fill="#9370DB"
-                />
-              </Bar>
-            </BarChart>
-      ) : (
-        <div className={styles.chartPlaceholder}>
-          <p>No renewable energy data available</p>
+                {loading.download ? (
+                  <FiLoader className={styles.spinner} />
+                ) : (
+                  <>
+                    <FiDownload className={styles.downloadIcon} />
+                    Download List
+                  </>
+                )}
+              </button>
+            </div>
+            <div className={styles.tableWrapper}>
+              <table className={styles.projectsTable}>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Project Name</th>
+                    <th>Reduction (Kgs)</th>
+                    <th>Investment (₹)</th>
+                    <th>Time Taken</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topProjects.map((project) => (
+                    <tr key={project.id}>
+                      <td>{project.id}</td>
+                      <td>{project.name}</td>
+                      <td>{project.reduction}</td>
+                      <td>{project.investment}</td>
+                      <td>{project.TimeTaken}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      )}
-    </ResponsiveContainer>
-  </div>
-</div>
-
-  </div>
-  {/* ✅ LEFT COLUMN ends */}
-
-  {/* ✅ RIGHT COLUMN starts */}
-  <div className={styles.rightColumn}>
-
-    {/* ✅ Carbon Emissions Table (moved here!) */}
-    <div className={styles.tableSection}>
-      <div className={styles.sectionHeader}>
-        <h2>CARBON EMISSIONS</h2>
-        <span className={styles.units}>Kgs/year</span>
       </div>
-      <div className={styles.tableWrapper}>
-        <table className={styles.emissionsTable}>
-          <thead>
-            <tr>
-              <th>SCOPE</th>
-              {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
-                <th key={year}>{year}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {emissionsData ? (
-              <>
-                <tr>
-                  <td>Scope 1</td>
-                  {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
-                    <td key={`scope1-${year}`}>
-                      {emissionsData[`scope1_${year}`]?.toFixed(2) || '0.00'}
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td>Scope 2</td>
-                  {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
-                    <td key={`scope2-${year}`}>
-                      {emissionsData[`scope2_${year}`]?.toFixed(2) || '0.00'}
-                    </td>
-                  ))}
-                </tr>
-                <tr className={styles.totalRow}>
-                  <td>TOTAL</td>
-                  {[2025, 2026, 2027, 2028, 2029, 2030].map(year => {
-                    const scope1 = emissionsData[`scope1_${year}`] || 0;
-                    const scope2 = emissionsData[`scope2_${year}`] || 0;
-                    return (
-                      <td key={`total-${year}`}>
-                        {(scope1 + scope2).toFixed(2)}
-                      </td>
-                    );
-                  })}
-                </tr>
-              </>
-            ) : (
-              <>
-                <tr>
-                  <td>Scope 1</td>
-                  {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
-                    <td key={`scope1-${year}`}>--</td>
-                  ))}
-                </tr>
-                <tr>
-                  <td>Scope 2</td>
-                  {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
-                    <td key={`scope2-${year}`}>--</td>
-                  ))}
-                </tr>
-                <tr className={styles.totalRow}>
-                  <td>TOTAL</td>
-                  {[2025, 2026, 2027, 2028, 2029, 2030].map(year => (
-                    <td key={`total-${year}`}>--</td>
-                  ))}
-                </tr>
-              </>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
 
-    {/* ✅ Top Projects Table */}
-    <div className={styles.tableSection}>
-      <div className={styles.sectionHeader}>
-        <h2>TOP PROJECTS</h2>
-        <span className={styles.units}>potential impact</span>
-        <button 
-          onClick={handleDownloadProjects}
-          className={styles.downloadButton}
-          disabled={topProjects[0].name === '--' || loading.download}
-        >
-          {loading.download ? (
-            <FiLoader className={styles.spinner} />
-          ) : (
-            <>
-              <FiDownload className={styles.downloadIcon} />
-              Download List
-            </>
-          )}
-        </button>
-      </div>
-      <div className={styles.tableWrapper}>
-        <table className={styles.projectsTable}>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Project Name</th>
-              <th>Reduction (Kgs)</th>
-              <th>Investment (₹)</th>
-              <th>Time Taken</th>
-            </tr>
-          </thead>
-          <tbody>
-            {topProjects.map((project) => (
-              <tr key={project.id}>
-                <td>{project.id}</td>
-                <td>{project.name}</td>
-                <td>{project.reduction}</td>
-                <td>{project.investment}</td>
-                <td>{project.TimeTaken}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-  </div>
-  {/* ✅ RIGHT COLUMN ends */}
-</div>
-
-<Footer />
-
+      <Footer />
     </div>
   );
 };
