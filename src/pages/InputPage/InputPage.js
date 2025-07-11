@@ -17,6 +17,8 @@ const InputPage = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState(null);
   const [formValid, setFormValid] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
   const navigate = useNavigate();
 
   const businessName = watch("businessName");
@@ -28,6 +30,7 @@ const InputPage = () => {
   
   const onSubmit = async (data) => {
     data.date = selectedDate;
+    setIsProcessing(true);
     
     try {
       const formData = new FormData();
@@ -49,19 +52,24 @@ const InputPage = () => {
       const result = await saveData(formData);
       
       if (result.success) {
-      // Upload file if one was selected
-      if (file && result.plantId) {
-        await handleFileUpload(result.plantId);
+        // Upload file if one was selected
+        if (file && result.plantId) {
+          await handleFileUpload(result.plantId);
+        }
+        
+        setShowSuccess(true);
+        setTimeout(() => {
+          setShowSuccess(false);
+          navigate('/success');
+        }, 1500);
       }
-      
-      alert('Data saved successfully to Database!');
-      navigate('/success');
+    } catch (error) {
+      console.error('Submission error:', error);
+      alert('Error saving data: ' + error.message);
+    } finally {
+      setIsProcessing(false);
     }
-  } catch (error) {
-    console.error('Submission error:', error);
-    alert('Error saving data: ' + error.message);
-  }
-};
+  };
 
   const handleFileChange = (e) => {
     if (!formValid) {
@@ -82,34 +90,32 @@ const InputPage = () => {
   };
 
   const handleFileUpload = async (plantId) => {
-  if (!formValid) {
-    alert('Please enter Business Name and Plant Name first');
-    return;
-  }
-
-  if (!file) {
-    alert('Please select a file first');
-    return;
-  }
-
-  try {
-    setUploadStatus('uploading');
-    const result = await uploadExcelFile(file, plantId, (progress) => {
-      setUploadProgress(progress);
-    });
-    
-    if (result.success) {
-      setUploadStatus('success');
-      alert('File uploaded successfully!');
-    } else {
-      throw new Error('Upload failed');
+    if (!formValid) {
+      alert('Please enter Business Name and Plant Name first');
+      return;
     }
-  } catch (error) {
-    console.error('Upload error:', error);
-    setUploadStatus('error');
-    alert('Error uploading file: ' + error.message);
-  }
-};
+
+    if (!file) {
+      alert('Please select a file first');
+      return;
+    }
+
+    try {
+      setUploadStatus('uploading');
+      const result = await uploadExcelFile(file, plantId, (progress) => {
+        setUploadProgress(progress);
+      });
+      
+      if (result.success) {
+        setUploadStatus('success');
+      } else {
+        throw new Error('Upload failed');
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      setUploadStatus('error');
+    }
+  };
 
   return (
     <div className={styles.dashboard}>
@@ -331,11 +337,6 @@ const InputPage = () => {
               ? "Supports: .xlsx, .xls, .csv (Max 10MB)"
               : "File upload will be enabled after basic info is entered"}
           </p>
-          <p style={{color: 'red', marginTop: '10px', fontSize: '1rem', fontWeight : 'bold' }}>
-            File naming format: businessname_plantname without whitespace (Case Sensitive) <br />
-             (e.g., Rane_1150, RML_1200, Rane_Madras_Limited_1150)
-            
-          </p>
           {file && (
             <div className={styles.filePreview}>
               <p>Selected: {file.name}</p>
@@ -345,48 +346,56 @@ const InputPage = () => {
         </div>
       </label>
       {file && formValid && (
-        <div className={styles.uploadActions}>
-          <button 
-            type="button" 
-            onClick={handleFileUpload}
-            className={styles.uploadButton}
-            disabled={uploadStatus === 'uploading'}
-          >
-            {uploadStatus === 'uploading' ? 'Uploading...' : 'Upload File'}
-          </button>
-          {uploadStatus === 'uploading' && (
-            <div className={styles.progressBar}>
-              <div 
-                className={styles.progressFill} 
-                style={{ width: `${uploadProgress}%` }}
-              ></div>
-            </div>
-          )}
-          {uploadStatus === 'success' && (
-            <div className={styles.uploadSuccess}>
-              ✓ Upload completed successfully
-            </div>
-          )}
-          {uploadStatus === 'error' && (
-            <div className={styles.uploadError}>
-              ✗ Upload failed. Please try again.
-            </div>
-          )}
-        </div>
-      )}
+  <div className={styles.uploadActions}>
+    {uploadStatus === 'uploading' && (
+      <div className={styles.progressBar}>
+        <div 
+          className={styles.progressFill} 
+          style={{ width: `${uploadProgress}%` }}
+        ></div>
+      </div>
+    )}
+    {uploadStatus === 'success' && (
+      <div className={styles.uploadSuccess}>
+        ✓ Upload completed successfully
+      </div>
+    )}
+    {uploadStatus === 'error' && (
+      <div className={styles.uploadError}>
+        ✗ Upload failed. Please try again.
+      </div>
+    )}
+  </div>
+)}
     </div>
   </div>
 </section>
           
           <div className={styles.actionBar}>
-            <button type="submit" className={styles.submitButton}>
-              Save & Process Data
-              <span className={styles.buttonArrow}>→</span>
+            <button type="submit" className={styles.submitButton} disabled={isProcessing}>
+              {isProcessing ? (
+                <div className={styles.spinner}></div>
+              ) : (
+                <>
+                  Save & Process Data
+                  <span className={styles.buttonArrow}>→</span>
+                </>
+              )}
             </button>
           </div>
         </form>
       </main>
       <Footer />
+
+      {/* Success Popup */}
+      {showSuccess && (
+        <div className={styles.successPopup}>
+          <div className={styles.successContent}>
+            <div className={styles.successIcon}>✓</div>
+            <div className={styles.successText}>Data Saved!</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
