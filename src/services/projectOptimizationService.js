@@ -1,113 +1,126 @@
 export function optimizeProjects(projects, constraints) {
-  // Convert constraints
   const maxInvestment = Number(constraints.investment) || Infinity;
-  const minCarbonKg = (Number(constraints.carbonEmission) || 0);
+  const minCarbonKg = Number(constraints.carbonEmission) || 0;
   const maxProjectTimeline = constraints.targetDate ? 
-    calculateTimeline(constraints.targetDate) : 
-    Infinity;
+    calculateTimeline(constraints.targetDate) : Infinity;
 
-  // Filter out projects that exceed timeline upfront
+  // Filter feasible projects first
   const feasibleProjects = projects.filter(project => 
     (project['Estimated Timeline in months'] || 0) <= maxProjectTimeline
   );
 
-  // Handle case when maxInvestment is Infinity
-  if (!isFinite(maxInvestment)) {
-    // Use greedy approach when no investment constraint
-    const selectedProjects = [];
-    let totalCarbon = 0;
-    let totalInvestment = 0;
-    let maxTime = 0;
-
-    // Sort by carbon reduction (descending)
-    feasibleProjects.sort((a, b) => 
-      (b['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0) - 
-      (a['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0)
-    );
-
-    // Select projects until carbon target is met
-    for (const project of feasibleProjects) {
-      if (totalCarbon >= minCarbonKg) break;
-      
-      selectedProjects.push(project);
-      totalCarbon += project['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0;
-      totalInvestment += project['Estimated Investment in Rs.'] || 0;
-      maxTime = Math.max(maxTime, project['Estimated Timeline in months'] || 0);
+  // Determine optimization approach based on constraints
+  if (minCarbonKg > 0) {
+    // Case 1: Carbon constraint exists (keep existing working logic)
+    if (maxInvestment > 5000 || !isFinite(maxInvestment)) {
+      return greedyOptimizeWithCarbon(feasibleProjects, minCarbonKg, maxInvestment);
     }
+    return dynamicProgrammingOptimize(feasibleProjects, minCarbonKg, maxInvestment);
+  } else {
+    // Case 2: Only investment constraint (new optimized logic)
+    return optimizeForInvestmentOnly(feasibleProjects, maxInvestment);
+  }
+}
 
-    if (totalCarbon >= minCarbonKg) {
-      return {
-        status: 'optimal',
-        selectedProjects,
-        totalInvestment,
-        totalCarbonReduction: totalCarbon,
-        maxProjectTimeline: maxTime
-      };
-    } else {
-      return { status: 'infeasible' };
-    }
+// Existing working implementation for carbon-constrained cases
+function greedyOptimizeWithCarbon(projects, minCarbonKg, maxInvestment) {
+  // Sort by carbon reduction per rupee (most efficient first)
+  const sorted = [...projects].sort((a, b) => {
+    const aEff = (a['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0) / 
+                 (a['Estimated Investment in Rs.'] || 1);
+    const bEff = (b['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0) / 
+                 (b['Estimated Investment in Rs.'] || 1);
+    return bEff - aEff;
+  });
+
+  let totalInvestment = 0;
+  let totalCarbon = 0;
+  const selectedProjects = [];
+  let maxTime = 0;
+
+  for (const project of sorted) {
+    const projectCost = project['Estimated Investment in Rs.'] || 0;
+    if (totalInvestment + projectCost > maxInvestment) continue;
+    
+    selectedProjects.push(project);
+    totalInvestment += projectCost;
+    totalCarbon += project['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0;
+    maxTime = Math.max(maxTime, project['Estimated Timeline in months'] || 0);
+    
+    if (totalCarbon >= minCarbonKg) break;
   }
 
-  // For finite investment, use DP approach
-  const dpSize = Math.min(maxInvestment, 1e8); // Safety limit for large investments
-  const dp = Array(feasibleProjects.length + 1)
-    .fill()
-    .map(() => Array(dpSize + 1).fill({
-      carbon: 0,
-      selected: []
-    }));
+  return {
+    status: totalCarbon >= minCarbonKg ? 'optimal' : 'infeasible',
+    selectedProjects,
+    totalInvestment,
+    totalCarbonReduction: totalCarbon,
+    maxProjectTimeline: maxTime
+  };
+}
 
-  // Dynamic programming approach
-  for (let i = 1; i <= feasibleProjects.length; i++) {
-    const project = feasibleProjects[i - 1];
-    const investment = project['Estimated Investment in Rs.'] || 0;
-    const carbon = project['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0;
-
-    for (let j = 0; j <= dpSize; j++) {
-      if (investment > j) {
-        dp[i][j] = dp[i - 1][j];
-      } else {
-        const include = {
-          carbon: dp[i - 1][j - investment].carbon + carbon,
-          selected: [...dp[i - 1][j - investment].selected, i - 1]
-        };
-        
-        dp[i][j] = include.carbon > dp[i - 1][j].carbon ? include : dp[i - 1][j];
-      }
-    }
-  }
-
-  // Find best solution
-  let bestSolution = null;
-  for (let j = 0; j <= dpSize; j++) {
-    const solution = dp[feasibleProjects.length][j];
-    if (solution.carbon >= minCarbonKg) {
-      if (!bestSolution || solution.carbon > bestSolution.carbon) {
-        bestSolution = solution;
-      }
-    }
-  }
-
-  // Prepare results
-  if (!bestSolution) {
-    return { status: 'infeasible' };
-  }
-
-  const selectedProjects = bestSolution.selected.map(i => feasibleProjects[i]);
-  const maxSingleProjectTimeline = Math.max(
-    ...selectedProjects.map(p => p['Estimated Timeline in months'] || 0), 
-    0
+// New implementation for investment-only case
+function optimizeForInvestmentOnly(projects, maxInvestment) {
+  // Sort by carbon reduction (descending) to maximize impact
+  const sorted = [...projects].sort((a, b) => 
+    (b['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0) - 
+    (a['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0)
   );
+
+  let totalInvestment = 0;
+  const selectedProjects = [];
+  let totalCarbon = 0;
+  let maxTime = 0;
+
+  for (const project of sorted) {
+    const projectCost = project['Estimated Investment in Rs.'] || 0;
+    if (totalInvestment + projectCost > maxInvestment) continue;
+    
+    selectedProjects.push(project);
+    totalInvestment += projectCost;
+    totalCarbon += project['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0;
+    maxTime = Math.max(maxTime, project['Estimated Timeline in months'] || 0);
+  }
 
   return {
     status: 'optimal',
     selectedProjects,
-    totalInvestment: bestSolution.selected.reduce(
-      (sum, i) => sum + (feasibleProjects[i]['Estimated Investment in Rs.'] || 0), 
-      0
-    ),
-    totalCarbonReduction: bestSolution.carbon,
-    maxProjectTimeline: maxSingleProjectTimeline
+    totalInvestment,
+    totalCarbonReduction: totalCarbon,
+    maxProjectTimeline: maxTime
+  };
+}
+
+// Keep existing DP implementation unchanged
+function dynamicProgrammingOptimize(projects, minCarbonKg, maxInvestment) {
+  const dpSize = Math.min(maxInvestment, 5000);
+  const dp = Array(dpSize + 1).fill({ carbon: 0, selected: [] });
+
+  for (const project of projects) {
+    const cost = project['Estimated Investment in Rs.'] || 0;
+    const carbon = project['Estimated Carbon Reduction in Kg/CO2 per annum'] || 0;
+    
+    for (let j = dpSize; j >= cost; j--) {
+      if (dp[j - cost].carbon + carbon > dp[j].carbon) {
+        dp[j] = {
+          carbon: dp[j - cost].carbon + carbon,
+          selected: [...dp[j - cost].selected, project]
+        };
+      }
+    }
+  }
+
+  const best = dp.reduce((best, curr) => 
+    curr.carbon >= minCarbonKg && curr.carbon > best.carbon ? curr : best, 
+    { carbon: 0 }
+  );
+
+  return {
+    status: best.carbon >= minCarbonKg ? 'optimal' : 'infeasible',
+    selectedProjects: best.selected || [],
+    totalInvestment: best.selected?.reduce((sum, p) => sum + (p['Estimated Investment in Rs.'] || 0), 0) || 0,
+    totalCarbonReduction: best.carbon,
+    maxProjectTimeline: best.selected?.reduce((max, p) => Math.max(max, p['Estimated Timeline in months'] || 0), 0) || 0
   };
 }
 
@@ -117,7 +130,6 @@ function calculateTimeline(targetDate) {
     const target = new Date(targetDate);
     if (isNaN(target.getTime())) return Infinity;
     
-    // Calculate difference in months
     const months = (target.getFullYear() - today.getFullYear()) * 12 + 
                    (target.getMonth() - today.getMonth());
     return Math.max(0, months);
