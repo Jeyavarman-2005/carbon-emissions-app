@@ -343,6 +343,10 @@ const DashboardPage = () => {
     carbonEmission: '',
     committed: false
   });
+  const [summaryInfo, setSummaryInfo] = useState({
+  type: null, // 'carbon' or 'investment'
+  value: null
+});
   const handleExcelDownload = async (
     response,
     setAllProjects,
@@ -585,6 +589,25 @@ const DashboardPage = () => {
       
       setTopProjects(topProjects);
       setFilteredProjects(filteredProjects);
+
+      // Determine which label to show
+      if (params.investment && params.carbonEmission) {
+        // Both constraints - hide label
+        setSummaryInfo({ type: null, value: null });
+      } else if (params.investment) {
+        // Only investment constraint - show carbon reduction
+        setSummaryInfo({
+          type: 'carbon',
+          value: summary.totalCarbonReduction
+        });
+      } else if (params.carbonEmission) {
+        // Only carbon constraint - show required investment
+        setSummaryInfo({
+          type: 'investment',
+          value: summary.totalInvestment
+        });
+      }
+      
       setEmissionsData(prev => ({...prev}));
       
       if (filteredProjects.length === 0) {
@@ -751,21 +774,30 @@ const DashboardPage = () => {
               </div>
             </div>
             <div className={styles.buttonGroup}>
-              <button
-                className={styles.saveButton}
-                onClick={handleSubmitParams}
-                disabled={!selectedBusiness || !selectedPlant || loading.submit}
-              >
-                {loading.submit ? (
-                  <FiLoader className={styles.spinner} />
-                ) : (
-                  <>
-                    SUBMIT
-                    <FiArrowRight className={styles.buttonIcon} />
-                  </>
-                )}
-              </button>
-            </div>
+  <button
+    className={styles.saveButton}
+    onClick={handleSubmitParams}
+    disabled={!selectedBusiness || !selectedPlant || loading.submit}
+  >
+    {loading.submit ? (
+      <FiLoader className={styles.spinner} />
+    ) : (
+      <>
+        SUBMIT
+        <FiArrowRight className={styles.buttonIcon} />
+      </>
+    )}
+  </button>
+  {summaryInfo.type && (
+    <div className={styles.summaryLabel}>
+      {summaryInfo.type === 'carbon' ? 'Reduced Carbon: ' : 'Required Investment: '}
+      {summaryInfo.type === 'carbon' 
+        ? `${summaryInfo.value.toLocaleString()} Kg/CO₂`
+        : `₹${summaryInfo.value.toLocaleString()}`
+      }
+    </div>
+  )}
+</div>
           </div>
         </div>
       </div>
